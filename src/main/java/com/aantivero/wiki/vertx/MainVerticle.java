@@ -14,9 +14,10 @@ public class MainVerticle extends AbstractVerticle {
         Future<Void> future = Future.future();
         return future;
     }
-    
+
     @Override
     public void start(Future<Void> startFuture) throws Exception {
-        startFuture.complete();
+        Future<Void> steps = prepareDatabase().compose(v -> startHttpServer());
+        steps.setHandler(startFuture);
     }
 }
