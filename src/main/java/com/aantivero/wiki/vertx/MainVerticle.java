@@ -1,8 +1,10 @@
 package com.aantivero.wiki.vertx;
 
+import com.github.rjeschke.txtmark.Processor;
 import io.vertx.core.AbstractVerticle;
 import io.vertx.core.Future;
 import io.vertx.core.http.HttpServer;
+import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import io.vertx.ext.jdbc.JDBCClient;
 import io.vertx.ext.sql.SQLConnection;
@@ -13,6 +15,7 @@ import io.vertx.ext.web.templ.FreeMarkerTemplateEngine;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.Date;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -28,6 +31,9 @@ public class MainVerticle extends AbstractVerticle {
     private JDBCClient dbClient;
     private static final Logger LOGGER = LoggerFactory.getLogger(MainVerticle.class);
     private final FreeMarkerTemplateEngine templateEngine = FreeMarkerTemplateEngine.create();
+    private static final String EMPTY_PAGE_MARKDOWN = "# A new page\n" +
+            "\n" +
+            "Feel-free to write in MarkDown!\n";
 
     private Future<Void> prepareDatabase() {
         Future<Void> future = Future.future();
@@ -82,7 +88,48 @@ public class MainVerticle extends AbstractVerticle {
         return future;
     }
 
-    private void indexHandler(RoutingContext routingContext) {
+    private void pageRenderingHandler(RoutingContext context) {
+        String page = context.request().getParam("page");
+
+        dbClient.getConnection(car -> {
+            if (car.succeeded()) {
+                SQLConnection connection = car.result();
+                connection.queryWithParams(SQL_GET_PAGE, new JsonArray().add(page), fetch -> {
+                    connection.close();
+                    if (fetch.succeeded()) {
+                        JsonArray row = fetch.result().getResults()
+                                .stream()
+                                .findFirst()
+                                .orElseGet(() -> new JsonArray().add(-1).add(EMPTY_PAGE_MARKDOWN));
+                        Integer id = row.getInteger(0);
+                        String rawContent = row.getString(1);
+
+                        context.put("title", page);
+                        context.put("id", id);
+                        context.put("newPage", fetch.result().getResults().size() == 0 ? "yes" : "no");
+                        context.put("rawContent", rawContent);
+                        context.put("content", Processor.process(rawContent));
+                        context.put("timestamp", new Date().toString());
+
+                        templateEngine.render(context, "templates", "page.ftl", ar -> {
+                            if (ar.succeeded()) {
+                                context.response().putHeader("Content-Type", "text/html");
+                                context.response().end(ar.result());
+                            } else {
+                                context.fail(ar.cause());
+                            }
+                        });
+                    } else {
+                        context.fail(fetch.cause());
+                    }
+                });
+            } else {
+                context.fail(car.cause());
+            }
+        });
+    }
+
+    private void indexHandler(RoutingContext context) {
         dbClient.getConnection(car -> {
             if(car.succeeded()) {
                 SQLConnection connection = car.result();
@@ -97,22 +144,22 @@ public class MainVerticle extends AbstractVerticle {
                                 .sorted()
                                 .collect(Collectors.toList());
 
-                        routingContext.put("title", "Wiki Home");
-                        routingContext.put("pages", pages);
-                        templateEngine.render(routingContext, "templates", "/index.ftl", ar -> {
+                        context.put("title", "Wiki Home");
+                        context.put("pages", pages);
+                        templateEngine.render(context, "templates", "/index.ftl", ar -> {
                             if(ar.succeeded()) {
-                                routingContext.response().putHeader("Content-Type", "text/html");
-                                routingContext.response().end(ar.result());
+                                context.response().putHeader("Content-Type", "text/html");
+                                context.response().end(ar.result());
                             } else {
-                                routingContext.fail(ar.cause());
+                                context.fail(ar.cause());
                             }
                         });
                     } else {
-                        routingContext.fail(res.cause());
+                        context.fail(res.cause());
                     }
                 });
             } else {
-                routingContext.fail(car.cause());
+                context.fail(car.cause());
             }
         });
     }
