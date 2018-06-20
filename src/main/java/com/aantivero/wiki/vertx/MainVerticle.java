@@ -2,9 +2,12 @@ package com.aantivero.wiki.vertx;
 
 import io.vertx.core.AbstractVerticle;
 import io.vertx.core.Future;
+import io.vertx.core.http.HttpServer;
 import io.vertx.core.json.JsonObject;
 import io.vertx.ext.jdbc.JDBCClient;
 import io.vertx.ext.sql.SQLConnection;
+import io.vertx.ext.web.Router;
+import io.vertx.ext.web.handler.BodyHandler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -49,6 +52,27 @@ public class MainVerticle extends AbstractVerticle {
 
     private Future<Void> startHttpServer() {
         Future<Void> future = Future.future();
+        HttpServer server = vertx.createHttpServer();
+
+        Router router = Router.router(vertx);
+        router.get("/").handler(this::indexHandler);
+        router.get("/wiki/:page").handler(this::pageRenderingHandler);
+        router.post().handler(BodyHandler.create());
+        router.post("/save").handler(this::pageUpdateHandler);
+        router.post("/create").handler(this::pageCreateHandler);
+        router.post("/delete").handler(this::pageDeletionHandler);
+
+        server
+                .requestHandler(router::accept)
+                .listen(8080, ar -> {
+                    if (ar.succeeded()) {
+                        LOGGER.info("HTTP Server running on port 8080");
+                        future.complete();
+                    } else {
+                        LOGGER.error("Could not start a HTTP Server", ar.cause());
+                        future.fail(ar.cause());
+                    }
+                });
         return future;
     }
 
