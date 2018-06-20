@@ -88,6 +88,18 @@ public class MainVerticle extends AbstractVerticle {
         return future;
     }
 
+    private void pageCreateHandler(RoutingContext context) {
+        // redirection
+        String pageName = context.request().getParam("name");
+        String location = "/wiki/" + pageName;
+        if (pageName == null || pageName.isEmpty()) {
+            location = "/";
+        }
+        context.response().setStatusCode(300);
+        context.response().putHeader("Location", location);
+        context.response().end();
+    }
+
     private void pageRenderingHandler(RoutingContext context) {
         String page = context.request().getParam("page");
 
