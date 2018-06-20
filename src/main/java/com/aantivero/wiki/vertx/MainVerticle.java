@@ -7,9 +7,14 @@ import io.vertx.core.json.JsonObject;
 import io.vertx.ext.jdbc.JDBCClient;
 import io.vertx.ext.sql.SQLConnection;
 import io.vertx.ext.web.Router;
+import io.vertx.ext.web.RoutingContext;
 import io.vertx.ext.web.handler.BodyHandler;
+import io.vertx.ext.web.templ.FreeMarkerTemplateEngine;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.util.List;
+import java.util.stream.Collectors;
 
 public class MainVerticle extends AbstractVerticle {
 
@@ -22,6 +27,7 @@ public class MainVerticle extends AbstractVerticle {
 
     private JDBCClient dbClient;
     private static final Logger LOGGER = LoggerFactory.getLogger(MainVerticle.class);
+    private final FreeMarkerTemplateEngine templateEngine = FreeMarkerTemplateEngine.create();
 
     private Future<Void> prepareDatabase() {
         Future<Void> future = Future.future();
@@ -74,6 +80,41 @@ public class MainVerticle extends AbstractVerticle {
                     }
                 });
         return future;
+    }
+
+    private void indexHandler(RoutingContext routingContext) {
+        dbClient.getConnection(car -> {
+            if(car.succeeded()) {
+                SQLConnection connection = car.result();
+                connection.query(SQL_ALL_PAGES, res -> {
+                    connection.close();
+
+                    if(res.succeeded()){
+                        List<String> pages = res.result()
+                                .getResults()
+                                .stream()
+                                .map(json -> json.getString(0))
+                                .sorted()
+                                .collect(Collectors.toList());
+
+                        routingContext.put("title", "Wiki Home");
+                        routingContext.put("pages", pages);
+                        templateEngine.render(routingContext, "templates", "/index.ftl", ar -> {
+                            if(ar.succeeded()) {
+                                routingContext.response().putHeader("Content-Type", "text/html");
+                                routingContext.response().end(ar.result());
+                            } else {
+                                routingContext.fail(ar.cause());
+                            }
+                        });
+                    } else {
+                        routingContext.fail(res.cause());
+                    }
+                });
+            } else {
+                routingContext.fail(car.cause());
+            }
+        });
     }
 
     @Override
