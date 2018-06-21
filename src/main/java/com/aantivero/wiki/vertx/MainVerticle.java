@@ -88,6 +88,27 @@ public class MainVerticle extends AbstractVerticle {
         return future;
     }
 
+    private void pageDeletionHandler(RoutingContext context) {
+        String id = context.request().getParam("id");
+        dbClient.getConnection(car -> {
+            if (car.succeeded()) {
+                SQLConnection connection = car.result();
+                connection.updateWithParams(SQL_DELETE_PAGE, new JsonArray().add(id), res -> {
+                    connection.close();
+                    if (res.succeeded()) {
+                        context.response().setStatusCode(303);
+                        context.response().putHeader("Location", "/");
+                        context.response().end();
+                    } else {
+                        context.fail(res.cause());
+                    }
+                });
+            } else {
+                context.fail(car.cause());
+            }
+        });
+    }
+
     private void pageUpdateHandler(RoutingContext context) {
         String id = context.request().getParam("id");
         String title = context.request().getParam("title");
@@ -127,7 +148,7 @@ public class MainVerticle extends AbstractVerticle {
         if (pageName == null || pageName.isEmpty()) {
             location = "/";
         }
-        context.response().setStatusCode(300);
+        context.response().setStatusCode(303);
         context.response().putHeader("Location", location);
         context.response().end();
     }
@@ -155,7 +176,7 @@ public class MainVerticle extends AbstractVerticle {
                         context.put("content", Processor.process(rawContent));
                         context.put("timestamp", new Date().toString());
 
-                        templateEngine.render(context, "templates", "page.ftl", ar -> {
+                        templateEngine.render(context, "templates", "/page.ftl", ar -> {
                             if (ar.succeeded()) {
                                 context.response().putHeader("Content-Type", "text/html");
                                 context.response().end(ar.result());
