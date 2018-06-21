@@ -2,8 +2,11 @@ package com.aantivero.wiki.vertx;
 
 import io.vertx.core.AbstractVerticle;
 import io.vertx.core.Future;
+import io.vertx.core.eventbus.DeliveryOptions;
 import io.vertx.core.http.HttpServer;
+import io.vertx.core.json.JsonObject;
 import io.vertx.ext.web.Router;
+import io.vertx.ext.web.RoutingContext;
 import io.vertx.ext.web.handler.BodyHandler;
 import io.vertx.ext.web.templ.FreeMarkerTemplateEngine;
 import org.slf4j.Logger;
@@ -50,6 +53,29 @@ public class HttpServerVerticle extends AbstractVerticle{
                         startFuture.fail(ar.cause());
                     }
                 });
+    }
+
+    private void indexHandler(RoutingContext context) {
+        DeliveryOptions options = new DeliveryOptions().addHeader("action", "all-pages");
+
+        // access to the event bus, send a message to the queue database verticle
+        vertx.eventBus().send(wikiDbQueue, new JsonObject(), options, reply -> {
+            if (reply.succeeded()) {
+                JsonObject body = (JsonObject)reply.result().body();
+                context.put("title", "My Wiki Home");
+                context.put("pages", body.getJsonArray("pages").getList());
+                templateEngine.render(context, "templates", "/index.ftl", ar -> {
+                    if (ar.succeeded()) {
+                        context.response().putHeader("Content-Type", "text/html");
+                        context.response().end(ar.result());
+                    } else {
+                        context.fail(ar.cause());
+                    }
+                });
+            } else {
+                context.fail(reply.cause());
+            }
+        });
     }
 
 
