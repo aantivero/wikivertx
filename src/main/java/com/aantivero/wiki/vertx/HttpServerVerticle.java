@@ -1,5 +1,6 @@
 package com.aantivero.wiki.vertx;
 
+import com.github.rjeschke.txtmark.Processor;
 import io.vertx.core.AbstractVerticle;
 import io.vertx.core.Future;
 import io.vertx.core.eventbus.DeliveryOptions;
@@ -11,6 +12,8 @@ import io.vertx.ext.web.handler.BodyHandler;
 import io.vertx.ext.web.templ.FreeMarkerTemplateEngine;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.util.Date;
 
 /**
  * Verticles to deal with HTTP requests
@@ -26,6 +29,10 @@ public class HttpServerVerticle extends AbstractVerticle{
     private String wikiDbQueue = "wikidb.queue";
 
     private final FreeMarkerTemplateEngine templateEngine = FreeMarkerTemplateEngine.create();
+
+    private static final String EMPTY_PAGE_MARKDOWN = "# A new page\n" +
+            "\n" +
+            "Feel-free to write in MarkDown!\n";
 
     @Override
     public void start(Future<Void> startFuture) throws Exception {
@@ -65,6 +72,38 @@ public class HttpServerVerticle extends AbstractVerticle{
                 context.put("title", "My Wiki Home");
                 context.put("pages", body.getJsonArray("pages").getList());
                 templateEngine.render(context, "templates", "/index.ftl", ar -> {
+                    if (ar.succeeded()) {
+                        context.response().putHeader("Content-Type", "text/html");
+                        context.response().end(ar.result());
+                    } else {
+                        context.fail(ar.cause());
+                    }
+                });
+            } else {
+                context.fail(reply.cause());
+            }
+        });
+    }
+
+    private void pageRenderingHandler(RoutingContext context) {
+        String requestedPage = context.request().getParam("page");
+        JsonObject request = new JsonObject().put("page", requestedPage);
+
+        DeliveryOptions options = new DeliveryOptions().addHeader("action", "get-page");
+        vertx.eventBus().send(wikiDbQueue, request, options, reply -> {
+            if (reply.succeeded()) {
+                JsonObject body = (JsonObject)reply.result().body();
+
+                boolean found = body.getBoolean("found");
+                String rawContent = body.getString("rawContent", EMPTY_PAGE_MARKDOWN);
+                context.put("title", requestedPage);
+                context.put("id", body.getInteger("id", -1));
+                context.put("newPage", found ? "no" : "yes");
+                context.put("rawContent", rawContent);
+                context.put("content", Processor.process(rawContent));
+                context.put("timestamp", new Date().toString());
+
+                templateEngine.render(context, "templates", "/page.ftl", ar -> {
                     if (ar.succeeded()) {
                         context.response().putHeader("Content-Type", "text/html");
                         context.response().end(ar.result());

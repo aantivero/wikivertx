@@ -31,9 +31,7 @@ public class MainVerticle extends AbstractVerticle {
     private JDBCClient dbClient;
     private static final Logger LOGGER = LoggerFactory.getLogger(MainVerticle.class);
     private final FreeMarkerTemplateEngine templateEngine = FreeMarkerTemplateEngine.create();
-    private static final String EMPTY_PAGE_MARKDOWN = "# A new page\n" +
-            "\n" +
-            "Feel-free to write in MarkDown!\n";
+
 
     private Future<Void> prepareDatabase() {
         Future<Void> future = Future.future();
