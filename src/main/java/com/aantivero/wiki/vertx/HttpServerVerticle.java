@@ -117,5 +117,59 @@ public class HttpServerVerticle extends AbstractVerticle{
         });
     }
 
+    private void pageUpdateHandler(RoutingContext context) {
+        String title = context.request().getParam("title");
+        JsonObject request = new JsonObject()
+                .put("id", context.request().getParam("id"))
+                .put("title", title)
+                .put("markdown", context.request().getParam("markdown"));
+
+        DeliveryOptions options = new DeliveryOptions();
+
+        if ("yes".equals(context.request().getParam("newPage"))) {
+            options.addHeader("action", "create-page");
+        } else {
+            options.addHeader("action", "save-page");
+        }
+
+        vertx.eventBus().send(wikiDbQueue, request, options, reply ->{
+           if (reply.succeeded()) {
+               context.response().setStatusCode(303);
+               context.response().putHeader("Location", "/wiki/" + title);
+               context.response().end();
+           } else {
+               context.fail(reply.cause());
+           }
+        });
+    }
+
+    private void pageCreateHandler(RoutingContext context) {
+        String pageName = context.request().getParam("name");
+        String location = "/wiki/" + pageName;
+
+        if (pageName == null || pageName.isEmpty()) {
+            location = "/";
+        }
+
+        context.response().setStatusCode(303);
+        context.response().putHeader("Location", location);
+        context.response().end();
+    }
+
+    private void pageDeleteHandler(RoutingContext context) {
+        String id = context.request().getParam("id");
+        JsonObject request = new JsonObject().put("id", id);
+        DeliveryOptions options = new DeliveryOptions().addHeader("action", "delete-page");
+
+        vertx.eventBus().send(wikiDbQueue, request, options, reply -> {
+            if (reply.succeeded()) {
+                context.response().setStatusCode(303);
+                context.response().putHeader("Location", "/");
+                context.response().end();
+            } else {
+                context.fail(reply.cause());
+            }
+        });
+    }
 
 }
