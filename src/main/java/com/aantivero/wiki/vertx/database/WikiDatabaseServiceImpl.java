@@ -1,10 +1,12 @@
 package com.aantivero.wiki.vertx.database;
 
 import io.vertx.core.AsyncResult;
+import io.vertx.core.Future;
 import io.vertx.core.Handler;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import io.vertx.ext.jdbc.JDBCClient;
+import io.vertx.ext.sql.SQLConnection;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -23,12 +25,31 @@ public class WikiDatabaseServiceImpl implements WikiDatabaseService {
         this.dbClient = dbClient;
         this.sqlQueries = sqlQueries;
 
-
+        dbClient.getConnection(ar -> {
+           if (ar.failed()) {
+               LOGGER.error("Could not open a database connection", ar.cause());
+               readyHandler.handle(Future.failedFuture(ar.cause()));
+           } else {
+               SQLConnection connection = ar.result();
+               connection.execute(sqlQueries.get(SqlQuery.CREATE_PAGES_TABLE), create -> {
+                  connection.close();
+                  if (create.failed()) {
+                      LOGGER.error("Database preparation error", create.cause());
+                      readyHandler.handle(Future.failedFuture(create.cause()));
+                  } else {
+                      readyHandler.handle(Future.succeededFuture(this));
+                  }
+               });
+           }
+        });
     }
 
     @Override
     public WikiDatabaseService fetchAllPages(Handler<AsyncResult<JsonArray>> resultHandler) {
-        return null;
+        dbClient.query(sqlQueries.get(SqlQuery.ALL_PAGES), res -> {
+            
+        });
+        return this;
     }
 
     @Override
