@@ -1,4 +1,4 @@
-package com.aantivero.wiki.vertx;
+package com.aantivero.wiki.vertx.http;
 
 import com.github.rjeschke.txtmark.Processor;
 import io.vertx.core.AbstractVerticle;

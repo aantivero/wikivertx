@@ -1,4 +1,4 @@
-package com.aantivero.wiki.vertx;
+package com.aantivero.wiki.vertx.database;
 
 import io.vertx.core.AbstractVerticle;
 import io.vertx.core.Future;

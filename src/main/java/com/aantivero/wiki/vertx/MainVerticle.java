@@ -1,5 +1,6 @@
 package com.aantivero.wiki.vertx;
 
+import com.aantivero.wiki.vertx.database.WikiDatabaseVerticle;
 import io.vertx.core.AbstractVerticle;
 import io.vertx.core.DeploymentOptions;
 import io.vertx.core.Future;
@@ -17,7 +18,7 @@ public class MainVerticle extends AbstractVerticle {
             // sequential composition run one asynchronous operation after the other
            Future<String> httpVerticleDeployment = Future.future();
            vertx.deployVerticle(
-                   "com.aantivero.wiki.vertx.HttpServerVerticle", // class name as a string
+                   "com.aantivero.wiki.vertx.http.HttpServerVerticle", // class name as a string
                    new DeploymentOptions().setInstances(2), // number of instances to deploy
                    httpVerticleDeployment.completer());
 
