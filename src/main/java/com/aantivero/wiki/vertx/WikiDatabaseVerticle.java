@@ -3,8 +3,10 @@ package com.aantivero.wiki.vertx;
 import io.vertx.core.AbstractVerticle;
 import io.vertx.core.Future;
 import io.vertx.core.eventbus.Message;
+import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import io.vertx.ext.jdbc.JDBCClient;
+import io.vertx.ext.sql.ResultSet;
 import io.vertx.ext.sql.SQLConnection;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -13,7 +15,9 @@ import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Properties;
+import java.util.stream.Collectors;
 
 public class WikiDatabaseVerticle extends AbstractVerticle {
 
@@ -126,5 +130,49 @@ public class WikiDatabaseVerticle extends AbstractVerticle {
             default:
                 message.fail(ErrorCodes.BAD_ACTION.ordinal(), "Bad action: " + action);
         }
+    }
+
+    private void fetchAllPages(Message<JsonObject> message) {
+        dbClient.query(sqlQueries.get(SqlQuery.ALL_PAGES), res -> {
+            if (res.succeeded()) {
+                List<String> pages = res.result()
+                        .getResults()
+                        .stream()
+                        .map(json -> json.getString(0))
+                        .sorted()
+                        .collect(Collectors.toList());
+                message.reply(new JsonObject().put("pages", new JsonArray(pages)));
+            } else {
+                reportQueryError(message, res.cause());
+            }
+        });
+    }
+
+    private void fetchPage(Message<JsonObject> message) {
+        String requestedPage = message.body().getString("page");
+        JsonArray params = new JsonArray().add(requestedPage);
+
+        dbClient.queryWithParams(sqlQueries.get(SqlQuery.GET_PAGE), params, fetch -> {
+            if (fetch.succeeded()) {
+                JsonObject response = new JsonObject();
+                ResultSet resultSet = fetch.result();
+                if (resultSet.getNumRows() == 0) {
+                    response.put("found", false);
+                } else {
+                    response.put("found", true);
+                    JsonArray row = resultSet.getResults().get(0);
+                    response.put("id", row.getInteger(0));
+                    response.put("rawContent", row.getString(0))
+
+                }
+                message.reply(response);
+            } else {
+                reportQueryError(message, fetch.cause());
+            }
+        });
+    }
+
+    private void createPage(Message<JsonObject> message) {
+
     }
 }
