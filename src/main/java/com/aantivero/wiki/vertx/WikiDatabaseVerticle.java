@@ -1,6 +1,10 @@
 package com.aantivero.wiki.vertx;
 
 import io.vertx.core.AbstractVerticle;
+import io.vertx.core.Future;
+import io.vertx.core.json.JsonObject;
+import io.vertx.ext.jdbc.JDBCClient;
+import io.vertx.ext.sql.SQLConnection;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -21,6 +25,10 @@ public class WikiDatabaseVerticle extends AbstractVerticle {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(WikiDatabaseVerticle.class);
 
+    private final HashMap<SqlQuery, String> sqlQueries = new HashMap<>();
+
+    private JDBCClient dbClient;
+
     private enum SqlQuery {
         CREATE_PAGES_TABLE,
         ALL_PAGES,
@@ -30,7 +38,11 @@ public class WikiDatabaseVerticle extends AbstractVerticle {
         DELETE_PAGE
     }
 
-    private final HashMap<SqlQuery, String> sqlQueries = new HashMap<>();
+    public enum ErrorCodes {
+        NO_ACTOPM_SPECIFIED,
+        BAD_ACTION,
+        DB_ERROR
+    }
 
     private void loadSqlQueries() throws IOException {
         String queriesFile = config().getString(CONFIG_WIKIDB_SQL_QUERIES_RESOURCE_FILE);
@@ -51,5 +63,38 @@ public class WikiDatabaseVerticle extends AbstractVerticle {
         sqlQueries.put(SqlQuery.CREATE_PAGE, queriesProps.getProperty("create-page"));
         sqlQueries.put(SqlQuery.SAVE_PAGE, queriesProps.getProperty("save-page"));
         sqlQueries.put(SqlQuery.DELETE_PAGE, queriesProps.getProperty("delete-page"));
+    }
+
+    @Override
+    public void start(Future<Void> startFuture) throws Exception {
+        // use blocking API, small data
+        loadSqlQueries();
+
+        dbClient = JDBCClient.createShared(vertx, new JsonObject()
+                .put("url", config().getString(CONFIG_WIKIDB_JDBC_URL, "jdbc:hsqldb:file:db/wiki"))
+                .put("driver_class", config().getString(CONFIG_WIKIDB_JDBC_DRIVER_CLASS, "org.hsqldb.jdbcDriver"))
+                .put("max_pool_size", config().getInteger(CONFIG_WIKIDB_JDBC_MAX_POOL_SIZE, 30)));
+
+        dbClient.getConnection(ar -> {
+            if (ar.failed()) {
+                LOGGER.error("Could not open ");
+                startFuture.fail(ar.cause());
+            } else {
+                SQLConnection connection = ar.result();
+                connection.execute(sqlQueries.get(SqlQuery.CREATE_PAGES_TABLE), create -> {
+                    connection.close();
+                    if (create.failed()) {
+                        LOGGER.error("Database preparation error", create.cause());
+                        startFuture.fail(create.cause());
+                    } else {
+                        vertx.eventBus().consumer(config().getString(CONFIG_WIKIDB_QUEUE, "wikidb.queue"), this::onMessage);
+                        startFuture.complete();
+
+                    }
+                })
+            }
+        });
+
+
     }
 }
