@@ -62,7 +62,7 @@ public class WikiDatabaseVerticle extends AbstractVerticle {
         queriesProps.load(queriesInputStream);
         queriesInputStream.close();
 
-        sqlQueries.put(SqlQuery.CREATE_PAGES_TABLE, queriesProps.getProperty("create-pages-table"));
+        sqlQueries.put(SqlQuery.CREATE_PAGES_TABLE, queriesProps.getProperty("create-pages-tables"));
         sqlQueries.put(SqlQuery.ALL_PAGES, queriesProps.getProperty("all-pages"));
         sqlQueries.put(SqlQuery.GET_PAGE, queriesProps.getProperty("get-page"));
         sqlQueries.put(SqlQuery.CREATE_PAGE, queriesProps.getProperty("create-page"));
