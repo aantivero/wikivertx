@@ -6,6 +6,7 @@ import io.vertx.core.Handler;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import io.vertx.ext.jdbc.JDBCClient;
+import io.vertx.ext.sql.ResultSet;
 import io.vertx.ext.sql.SQLConnection;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -66,7 +67,25 @@ public class WikiDatabaseServiceImpl implements WikiDatabaseService {
 
     @Override
     public WikiDatabaseService fetchPage(String name, Handler<AsyncResult<JsonObject>> resultHandler) {
-        return null;
+        dbClient.queryWithParams(sqlQueries.get(SqlQuery.GET_PAGE), new JsonArray().add(name), fetch -> {
+            if (fetch.succeeded()) {
+                JsonObject response = new JsonObject();
+                ResultSet resultSet = fetch.result();
+                if (resultSet.getNumRows() == 0) {
+                    response.put("found", false);
+                } else {
+                    response.put("found", true);
+                    JsonArray row = resultSet.getResults().get(0);
+                    response.put("id", row.getInteger(0));
+                    response.put("rawContent", row.getString(1));
+                }
+                resultHandler.handle(Future.succeededFuture(response));
+            } else {
+                LOGGER.error("Database query error", fetch.cause());
+                resultHandler.handle(Future.failedFuture(fetch.cause()));
+            }
+        });
+        return this;
     }
 
     @Override
