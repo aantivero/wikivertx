@@ -162,8 +162,7 @@ public class WikiDatabaseVerticle extends AbstractVerticle {
                     response.put("found", true);
                     JsonArray row = resultSet.getResults().get(0);
                     response.put("id", row.getInteger(0));
-                    response.put("rawContent", row.getString(0))
-
+                    response.put("rawContent", row.getString(1));
                 }
                 message.reply(response);
             } else {
@@ -173,6 +172,49 @@ public class WikiDatabaseVerticle extends AbstractVerticle {
     }
 
     private void createPage(Message<JsonObject> message) {
+        JsonObject request = message.body();
+        JsonArray data = new JsonArray()
+                .add(request.getString("title"))
+                .add(request.getString("markdown"));
 
+        dbClient.updateWithParams(sqlQueries.get(SqlQuery.CREATE_PAGE), data, res -> {
+            if (res.succeeded()) {
+                message.reply("ok");
+            } else {
+                reportQueryError(message, res.cause());
+            }
+        });
+    }
+
+    private void savePage(Message<JsonObject> message) {
+        JsonObject request = message.body();
+        JsonArray data = new JsonArray()
+                .add(request.getString("markdown"))
+                .add(request.getString("id"));
+
+        dbClient.updateWithParams(sqlQueries.get(SqlQuery.SAVE_PAGE), data, res -> {
+            if (res.succeeded()) {
+                message.reply("ok");
+            } else {
+                reportQueryError(message, res.cause());
+            }
+        });
+    }
+
+    private void deletePage(Message<JsonObject> message) {
+        JsonArray data = new JsonArray().add(message.body().getString("id"));
+
+        dbClient.updateWithParams(sqlQueries.get(SqlQuery.DELETE_PAGE), data, res -> {
+            if (res.succeeded()) {
+                message.reply("ok");
+            } else {
+                reportQueryError(message, res.cause());
+            }
+        });
+    }
+
+    private void reportQueryError(Message<JsonObject> message, Throwable cause) {
+        LOGGER.error("Database query error", cause);
+        message.fail(ErrorCodes.DB_ERROR.ordinal(), cause.getMessage());
     }
 }
