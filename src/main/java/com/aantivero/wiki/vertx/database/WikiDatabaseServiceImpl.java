@@ -11,6 +11,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.HashMap;
+import java.util.stream.Collectors;
 
 public class WikiDatabaseServiceImpl implements WikiDatabaseService {
 
@@ -47,7 +48,18 @@ public class WikiDatabaseServiceImpl implements WikiDatabaseService {
     @Override
     public WikiDatabaseService fetchAllPages(Handler<AsyncResult<JsonArray>> resultHandler) {
         dbClient.query(sqlQueries.get(SqlQuery.ALL_PAGES), res -> {
-            
+           if (res.succeeded()) {
+               JsonArray pages = new JsonArray(res.result()
+                       .getResults()
+                       .stream()
+                       .map(json -> json.getString(0))
+                       .sorted()
+                       .collect(Collectors.toList()));
+               resultHandler.handle(Future.succeededFuture(pages));
+           } else {
+               LOGGER.error("Database query error", res.cause());
+               resultHandler.handle(Future.failedFuture(res.cause()));
+           }
         });
         return this;
     }
