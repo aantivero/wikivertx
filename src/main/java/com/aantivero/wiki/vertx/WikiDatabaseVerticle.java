@@ -2,6 +2,7 @@ package com.aantivero.wiki.vertx;
 
 import io.vertx.core.AbstractVerticle;
 import io.vertx.core.Future;
+import io.vertx.core.eventbus.Message;
 import io.vertx.core.json.JsonObject;
 import io.vertx.ext.jdbc.JDBCClient;
 import io.vertx.ext.sql.SQLConnection;
@@ -39,7 +40,7 @@ public class WikiDatabaseVerticle extends AbstractVerticle {
     }
 
     public enum ErrorCodes {
-        NO_ACTOPM_SPECIFIED,
+        NO_ACTION_SPECIFIED,
         BAD_ACTION,
         DB_ERROR
     }
@@ -91,10 +92,39 @@ public class WikiDatabaseVerticle extends AbstractVerticle {
                         startFuture.complete();
 
                     }
-                })
+                });
             }
         });
+    }
 
+    public void onMessage(Message<JsonObject> message) {
+        // this is the event bus message handler
+        if (!message.headers().contains("action")) {
+            LOGGER.error("No action header specified header {} and body {}", message.headers(), message.body().encodePrettily());
+            message.fail(ErrorCodes.NO_ACTION_SPECIFIED.ordinal(), "No action header specified");
+            return;
+        }
 
+        String action = message.headers().get("action");
+
+        switch (action) {
+            case "all-pages":
+                fetchAllPages(message);
+                break;
+            case "get-page":
+                fetchPage(message);
+                break;
+            case "create-page":
+                createPage(message);
+                break;
+            case "save-page":
+                savePage(message);
+                break;
+            case "delete-page":
+                deletePage(message);
+                break;
+            default:
+                message.fail(ErrorCodes.BAD_ACTION.ordinal(), "Bad action: " + action);
+        }
     }
 }
