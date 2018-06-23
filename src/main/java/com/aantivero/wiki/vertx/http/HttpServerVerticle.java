@@ -1,5 +1,6 @@
 package com.aantivero.wiki.vertx.http;
 
+import com.aantivero.wiki.vertx.database.WikiDatabaseService;
 import com.github.rjeschke.txtmark.Processor;
 import io.vertx.core.AbstractVerticle;
 import io.vertx.core.Future;
@@ -25,18 +26,20 @@ public class HttpServerVerticle extends AbstractVerticle{
     public static final String CONFIG_HTTP_SERVER_PORT = "http.server.port";
     // name of the event bus destination to post message to the database
     public static final String CONFIG_WIKIDB_QUEUE = "wikidb.queue";
-
-    private String wikiDbQueue = "wikidb.queue";
-
+    
     private final FreeMarkerTemplateEngine templateEngine = FreeMarkerTemplateEngine.create();
 
     private static final String EMPTY_PAGE_MARKDOWN = "# A new page\n" +
             "\n" +
             "Feel-free to write in MarkDown!\n";
 
+    private WikiDatabaseService dbService;
+
     @Override
     public void start(Future<Void> startFuture) throws Exception {
-        wikiDbQueue = config().getString(CONFIG_WIKIDB_QUEUE, "wikidb.queue");
+        String wikiDbQueue = config().getString(CONFIG_WIKIDB_QUEUE, "wikidb.queue");
+
+        dbService = WikiDatabaseService.createProxy(vertx, wikiDbQueue);
 
         HttpServer server = vertx.createHttpServer();
 
