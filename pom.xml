@@ -86,6 +86,10 @@
             <scope>provided</scope>
         </dependency>
         <!-- end::refactor-services -->
+        <dependency>
+            <groupId>io.vertx</groupId>
+            <artifactId>vertx-web-client</artifactId>
+        </dependency>
     </dependencies>
 
     <build>
