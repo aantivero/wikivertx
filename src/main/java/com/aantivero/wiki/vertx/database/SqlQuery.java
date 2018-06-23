@@ -6,5 +6,6 @@ public enum SqlQuery {
     GET_PAGE,
     CREATE_PAGE,
     SAVE_PAGE,
+    All_PAGES_DATA,
     DELETE_PAGE
 }
