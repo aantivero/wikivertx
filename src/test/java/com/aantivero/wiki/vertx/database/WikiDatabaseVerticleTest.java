@@ -37,11 +37,30 @@ public class WikiDatabaseVerticleTest {
         service.createPage("Test", "Some context", context.asyncAssertSuccess(v1 -> {
 
             service.fetchPage("Test", context.asyncAssertSuccess(json1 -> {
-                System.out.println(json1);
                 context.assertTrue(json1.getBoolean("found"));
                 context.assertTrue(json1.containsKey("id"));
                 context.assertEquals("Some context", json1.getString("rawContent"));
-                async.complete();
+
+                service.savePage(json1.getInteger("id"), "Hello!!", context.asyncAssertSuccess(v2 -> {
+
+                    service.fetchAllPages(context.asyncAssertSuccess(array1 -> {
+                        context.assertEquals(1, array1.size());
+
+                        service.fetchPage("Test", context.asyncAssertSuccess(json2 -> {
+
+                            context.assertEquals("Hello!!", json2.getString("rawContent"));
+
+                            service.deletePage(json1.getInteger("id"), v3 -> {
+
+                                service.fetchAllPages(context.asyncAssertSuccess(array2 -> {
+                                    context.assertTrue(array2.isEmpty());
+
+                                    async.complete();
+                                }));
+                            });
+                        }));
+                    }));
+                }));
             }));
         }));
 
