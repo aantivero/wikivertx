@@ -90,16 +90,43 @@ public class WikiDatabaseServiceImpl implements WikiDatabaseService {
 
     @Override
     public WikiDatabaseService createPage(String title, String markdown, Handler<AsyncResult<Void>> resultHandler) {
-        return null;
+        JsonArray data = new JsonArray().add(title).add(markdown);
+        dbClient.updateWithParams(sqlQueries.get(SqlQuery.CREATE_PAGE), data, res -> {
+            if (res.succeeded()) {
+                resultHandler.handle(Future.succeededFuture());
+            } else {
+                LOGGER.error("Database query error", res.cause());
+                resultHandler.handle(Future.failedFuture(res.cause()));
+            }
+        });
+        return this;
     }
 
     @Override
     public WikiDatabaseService savePage(int id, String markdown, Handler<AsyncResult<Void>> resultHandler) {
-        return null;
+        JsonArray data = new JsonArray().add(markdown).add(id);
+        dbClient.updateWithParams(sqlQueries.get(SqlQuery.SAVE_PAGE), data, res -> {
+            if (res.succeeded()) {
+                resultHandler.handle(Future.succeededFuture());
+            } else {
+                LOGGER.error("Database query error", res.cause());
+                resultHandler.handle(Future.failedFuture(res.cause()));
+            }
+        });
+        return this;
     }
 
     @Override
     public WikiDatabaseService deletePage(int id, Handler<AsyncResult<Void>> resultHandler) {
-        return null;
+        JsonArray data = new JsonArray().add(id);
+        dbClient.updateWithParams(sqlQueries.get(SqlQuery.DELETE_PAGE), data, res -> {
+            if (res.succeeded()) {
+                resultHandler.handle(Future.succeededFuture());
+            } else {
+                LOGGER.error("Database query error", res.cause());
+                resultHandler.handle(Future.failedFuture(res.cause()));
+            }
+        });
+        return this;
     }
 }
