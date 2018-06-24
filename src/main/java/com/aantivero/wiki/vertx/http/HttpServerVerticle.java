@@ -93,7 +93,41 @@ public class HttpServerVerticle extends AbstractVerticle{
                 });
     }
 
-    private void apiRoot(RoutingContext context) {
+	private void apiGetPage(RoutingContext context) {
+    	int id = Integer.valueOf(context.request().getParam("id"));
+    	dbService.fetchPageById(id, reply -> {
+    		JsonObject response = new JsonObject();
+    		if (reply.succeeded()) {
+    			JsonObject dbObject = reply.result();
+    			if (dbObject.getBoolean("found")) {
+    				JsonObject payload = new JsonObject()
+						.put("name", dbObject.getString("name"))
+						.put("id", dbObject.getInteger("id"))
+						.put("markdown", dbObject.getString("content"))
+						.put("html", Processor.process(dbObject.getString("content")));
+    				response
+                        .put("success", true)
+                        .put("payload", payload);
+    				context.response().setStatusCode(200);
+			    } else {
+    			    response
+                        .put("success", false)
+                        .put("error", "There is not page with ID" + id);
+    			    context.response().setStatusCode(404);
+                }
+		    } else {
+    		    response
+                    .put("success", false)
+                    .put("error", reply.cause().getMessage());
+    		    context.response().setStatusCode(500);
+            }
+
+            context.response().putHeader("Content-Type", "application/json");
+    		context.response().end(response.encode());
+	    });
+	}
+
+	private void apiRoot(RoutingContext context) {
         dbService.fetchAllPagesData(reply -> {
             JsonObject response = new JsonObject();
             if (reply.succeeded()) {
