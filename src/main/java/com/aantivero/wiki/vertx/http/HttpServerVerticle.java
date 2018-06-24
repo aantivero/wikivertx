@@ -94,6 +94,14 @@ public class HttpServerVerticle extends AbstractVerticle{
                 });
     }
 
+	private void apiDeletePage(RoutingContext context) {
+    	int id = Integer.valueOf(context.request().getParam("id"));
+
+    	dbService.deletePage(id, reply -> {
+    		handleSimpleDbReply(context, reply);
+	    });
+	}
+
 	private void apiUpdatePage(RoutingContext context) {
     	JsonObject page = context.getBodyAsJson();
     	int id = Integer.valueOf(context.request().getParam("id"));
