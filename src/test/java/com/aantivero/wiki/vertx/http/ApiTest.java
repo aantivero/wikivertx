@@ -4,6 +4,7 @@ import com.aantivero.wiki.vertx.database.WikiDatabaseVerticle;
 import io.vertx.core.DeploymentOptions;
 import io.vertx.core.Future;
 import io.vertx.core.Vertx;
+import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import io.vertx.ext.unit.Async;
 import io.vertx.ext.unit.TestContext;
@@ -68,7 +69,57 @@ public class ApiTest {
 				}
 			});
 
-		postRequest.compose(response -> {
+		Future<JsonObject> getRequest = Future.future();
+		postRequest.compose(h -> {
+			webClient.get("/api/pages")
+				.as(BodyCodec.jsonObject())
+				.send(ar -> {
+					if (ar.succeeded()) {
+						HttpResponse<JsonObject> getResponse = ar.result();
+						getRequest.complete(getResponse.body());
+					} else {
+						context.fail(ar.cause());
+					}
+				});
+		}, getRequest);
+
+		Future<JsonObject> putRequest = Future.future();
+		getRequest.compose(response -> {
+			JsonArray array = response.getJsonArray("pages");
+			context.assertEquals(1, array.size());
+			context.assertEquals(0, array.getJsonObject(0).getInteger("id"));
+			webClient.put("/api/pages/0")
+				.as(BodyCodec.jsonObject())
+				.sendJsonObject(
+					new JsonObject()
+					.put("id", 0)
+					.put("markdown", "Oh Yeah!"), ar -> {
+						if (ar.succeeded()) {
+							HttpResponse<JsonObject> putResponse = ar.result();
+							putRequest.complete(putResponse.body());
+						} else {
+							context.fail(ar.cause());
+						}
+					}
+				);
+		},putRequest);
+
+		Future<JsonObject> deleteRequest = Future.future();
+		putRequest.compose(response -> {
+			context.assertTrue(response.getBoolean("success"));
+			webClient.delete("/api/pages/0")
+				.as(BodyCodec.jsonObject())
+				.send(ar -> {
+					if (ar.succeeded()) {
+						HttpResponse<JsonObject> deleteResponse = ar.result();
+						deleteRequest.complete(deleteResponse.body());
+					} else {
+						context.fail(ar.cause());
+					}
+				});
+		}, deleteRequest);
+
+		deleteRequest.compose(response -> {
 			context.assertTrue(response.getBoolean("success"));
 			async.complete();
 		}, Future.failedFuture("Oh?"));
