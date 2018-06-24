@@ -8,9 +8,14 @@ import io.vertx.core.Future;
 import io.vertx.core.Handler;
 import io.vertx.core.eventbus.DeliveryOptions;
 import io.vertx.core.http.HttpServer;
+import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import io.vertx.ext.web.Router;
 import io.vertx.ext.web.RoutingContext;
+import io.vertx.ext.web.client.HttpResponse;
+import io.vertx.ext.web.client.WebClient;
+import io.vertx.ext.web.client.WebClientOptions;
+import io.vertx.ext.web.codec.BodyCodec;
 import io.vertx.ext.web.handler.BodyHandler;
 import io.vertx.ext.web.templ.FreeMarkerTemplateEngine;
 import org.slf4j.Logger;
@@ -37,16 +42,25 @@ public class HttpServerVerticle extends AbstractVerticle{
 
     private WikiDatabaseService dbService;
 
+    private WebClient webClient;
+
     @Override
     public void start(Future<Void> startFuture) throws Exception {
         String wikiDbQueue = config().getString(CONFIG_WIKIDB_QUEUE, "wikidb.queue");
 
         dbService = WikiDatabaseService.createProxy(vertx, wikiDbQueue);
 
+        // init the web client
+        webClient = WebClient.create(vertx, new WebClientOptions()
+                .setSsl(true)
+                .setUserAgent("antivero-wiki-vertx"));
+
+
         HttpServer server = vertx.createHttpServer();
 
         Router router = Router.router(vertx);
         router.get("/").handler(this::indexHandler);
+        router.get("/backup").handler(this::backupHandler);
         router.get("/wiki/:page").handler(this::pageRenderingHandler);
         router.post().handler(BodyHandler.create());
         router.post("/save").handler(this::pageUpdateHandler);
@@ -163,6 +177,61 @@ public class HttpServerVerticle extends AbstractVerticle{
            } else {
                context.fail(reply.cause());
            }
+        });
+    }
+
+    private void backupHandler(RoutingContext context) {
+        dbService.fetchAllPagesData(reply -> {
+            if (reply.succeeded()) {
+
+                JsonArray filesObject = new JsonArray();
+                JsonObject payload = new JsonObject()
+                        .put("files", filesObject)
+                        .put("language", "plaintext")
+                        .put("title", "antivero-wiki-vertx-backup")
+                        .put("public", "true");
+
+                reply
+                        .result()
+                        .forEach(page -> {
+                            JsonObject fileObject = new JsonObject();
+                            fileObject.put("name", page.getString("NAME"));
+                            fileObject.put("content", page.getString("CONTENT"));
+                            filesObject.add(fileObject);
+                        });
+
+                webClient.post(443, "snippets.glot.io", "/snippets")
+                        .putHeader("Content-Type", "application/json")
+                        .as(BodyCodec.jsonObject())
+                        .sendJsonObject(payload, ar -> {
+                            if (ar.succeeded()) {
+                                HttpResponse<JsonObject> response = ar.result();
+                                if (response.statusCode() == 200) {
+                                    String url = "https://glot.io/snippets/" + response.body().getString("id");
+                                    context.put("backup_gist_url", url);
+                                    indexHandler(context);
+                                } else {
+                                    StringBuilder message = new StringBuilder();
+                                    message.append("Could not backup the wiki");
+                                    message.append(response.statusMessage());
+
+                                    JsonObject body = response.body();
+                                    if (body != null) {
+                                        message.append(System.getProperty("line.separator"))
+                                                .append(body.encodePrettily());
+                                    }
+                                    LOGGER.error(message.toString());
+                                    context.fail(502);
+                                }
+                            } else {
+                                Throwable err = ar.cause();
+                                LOGGER.error("HTTP Client error", err);
+                                context.fail(err);
+                            }
+                        });
+            } else {
+                context.fail(reply.cause());
+            }
         });
     }
 
