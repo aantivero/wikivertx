@@ -21,6 +21,7 @@ import io.vertx.ext.web.templ.FreeMarkerTemplateEngine;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.Arrays;
 import java.util.Date;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -93,7 +94,42 @@ public class HttpServerVerticle extends AbstractVerticle{
                 });
     }
 
-	private void apiGetPage(RoutingContext context) {
+    private void apiCreate(RoutingContext context) {
+        JsonObject page = context.getBodyAsJson();
+        if (!validateJsonPageDocument(context, page, "name", "markdown")) {
+            return;
+        }
+        dbService.createPage(page.getString("name"), page.getString("markdown"), reply -> {
+            if (reply.succeeded()) {
+                context.response().setStatusCode(201);
+                context.response().putHeader("Content-Type", "application/json");
+                context.response().end(new JsonObject().put("success", true).encode());
+            } else {
+                context.response().setStatusCode(500);
+                context.response().putHeader("Content-Type", "application/json");
+                context.response().end(new JsonObject()
+                    .put("success", false)
+                    .put("error", reply.cause().getMessage()).encode());
+            }
+        });
+    }
+
+    private boolean validateJsonPageDocument(RoutingContext context, JsonObject page, String... expectedKeys) {
+        if (!Arrays.stream(expectedKeys).allMatch(page::containsKey)) {
+            LOGGER.error("Bad page creation JSON payload: " + page.encodePrettily() +
+                " from: " + context.request().remoteAddress());
+
+            context.response().setStatusCode(400);
+            context.response().putHeader("Content-Type", "application/json");
+            context.response().end(new JsonObject()
+                .put("success", false)
+                .put("error", "Bad request payload").encode());
+            return false;
+        }
+        return true;
+    }
+
+    private void apiGetPage(RoutingContext context) {
     	int id = Integer.valueOf(context.request().getParam("id"));
     	dbService.fetchPageById(id, reply -> {
     		JsonObject response = new JsonObject();
