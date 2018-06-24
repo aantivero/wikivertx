@@ -67,6 +67,16 @@ public class HttpServerVerticle extends AbstractVerticle{
         router.post("/create").handler(this::pageCreateHandler);
         router.post("/delete").handler(this::pageDeleteHandler);
 
+        Router apiRouter = Router.router(vertx);
+        apiRouter.get("/pages").handler(this::apiRoot);
+        apiRouter.get("/pages/:id").handler(this::apiGetPage);
+        apiRouter.post().handler(BodyHandler.create());
+        apiRouter.post("/pages").handler(this::apiCreate);
+        apiRouter.put().handler(BodyHandler.create());
+        apiRouter.put("/pages/:id").handler(this::apiUpdatePage);
+        apiRouter.delete("/pages/:id").handler(this::apiDeletePage);
+        router.mountSubRouter("/api", apiRouter);
+
         int portNumber = config().getInteger(CONFIG_HTTP_SERVER_PORT, 8080);
         server
                 .requestHandler(router::accept)
