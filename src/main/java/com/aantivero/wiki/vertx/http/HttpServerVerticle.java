@@ -94,7 +94,41 @@ public class HttpServerVerticle extends AbstractVerticle{
                 });
     }
 
-    private void apiCreate(RoutingContext context) {
+	private void apiUpdatePage(RoutingContext context) {
+    	JsonObject page = context.getBodyAsJson();
+    	int id = Integer.valueOf(context.request().getParam("id"));
+
+    	if (!validateJsonPageDocument(context, page, "markdown")) {
+    		return;
+	    }
+
+	    dbService.savePage(id, page.getString("markdown"), reply -> {
+	    	handleSimpleDbReply(context, reply);
+	    });
+	}
+
+	private void handleSimpleDbReply(RoutingContext context, AsyncResult<Void> reply) {
+		context.response().putHeader("Content-Type", "application/json");
+    	if (reply.succeeded()) {
+    		context.response().setStatusCode(200);
+    		context.response().end(
+    			new JsonObject()
+				    .put("success", true)
+				    .encode()
+		    );
+	    } else {
+    		context.response().setStatusCode(500);
+    		context.response().end(
+    			new JsonObject()
+				    .put("success", false)
+				    .put("error", reply.cause().getMessage())
+				    .encode()
+		    );
+
+	    }
+	}
+
+	private void apiCreate(RoutingContext context) {
         JsonObject page = context.getBodyAsJson();
         if (!validateJsonPageDocument(context, page, "name", "markdown")) {
             return;
