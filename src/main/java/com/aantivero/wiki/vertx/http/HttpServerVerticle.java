@@ -22,6 +22,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.Date;
+import java.util.List;
+import java.util.stream.Collectors;
 
 /**
  * Verticles to deal with HTTP requests
@@ -89,6 +91,33 @@ public class HttpServerVerticle extends AbstractVerticle{
                         startFuture.fail(ar.cause());
                     }
                 });
+    }
+
+    private void apiRoot(RoutingContext context) {
+        dbService.fetchAllPagesData(reply -> {
+            JsonObject response = new JsonObject();
+            if (reply.succeeded()) {
+                List<JsonObject> pages = reply.result()
+                        .stream()
+                        .map(obj -> new JsonObject()
+                                .put("id", obj.getInteger("ID"))
+                                .put("name", obj.getString("NAME")))
+                        .collect(Collectors.toList());
+
+                response
+                        .put("success", true)
+                        .put("pages", pages);
+                context.response().setStatusCode(200);
+                context.response().putHeader("Content-Type", "application/json");
+                context.response().end(response.encode());
+            } else {
+                response.put("success", false);
+                response.put("error", reply.cause().getMessage());
+                context.response().setStatusCode(500);
+                context.response().putHeader("Content-Type", "application/json");
+                context.response().end(response.encode());
+            }
+        });
     }
 
     private void indexHandler(RoutingContext context) {
