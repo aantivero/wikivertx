@@ -27,6 +27,7 @@ public class ApiTest {
 
 	private Vertx vertx;
 	private WebClient webClient;
+	private String jwtTokenHeaderValue;
 
 	@Before
 	public void prepare(TestContext context) {
@@ -62,26 +63,44 @@ public class ApiTest {
 	public void play_with_api(TestContext context) {
 		Async async = context.async();
 
-		JsonObject page = new JsonObject()
-			.put("name", "Sample")
-			.put("markdown", "# A Page");
-
-		Future<JsonObject> postRequest = Future.future();
-
-		webClient.post("/api/pages")
-			.as(BodyCodec.jsonObject())
-			.sendJsonObject(page, ar -> {
+		Future<String> tokenRequest = Future.future();
+		webClient.get("/api/token")
+			.putHeader("login", "foo")
+			.putHeader("password", "bar")
+			.as(BodyCodec.string())
+			.send(ar -> {
 				if (ar.succeeded()) {
-					HttpResponse<JsonObject> postResponse = ar.result();
-					postRequest.complete(postResponse.body());
+					tokenRequest.complete(ar.result().body());
 				} else {
 					context.fail(ar.cause());
 				}
 			});
 
+		JsonObject page = new JsonObject()
+			.put("name", "Sample")
+			.put("markdown", "# A Page");
+
+		Future<JsonObject> postRequest = Future.future();
+		tokenRequest.compose(token -> {
+			jwtTokenHeaderValue = "Bearer " + token;
+			webClient.post("/api/pages")
+				.putHeader("Authorization", jwtTokenHeaderValue)
+				.as(BodyCodec.jsonObject())
+				.sendJsonObject(page, ar -> {
+					if (ar.succeeded()) {
+						HttpResponse<JsonObject> postResponse = ar.result();
+						postRequest.complete(postResponse.body());
+					} else {
+						context.fail(ar.cause());
+					}
+				});
+
+		}, postRequest);
+
 		Future<JsonObject> getRequest = Future.future();
 		postRequest.compose(h -> {
 			webClient.get("/api/pages")
+				.putHeader("Authorization", jwtTokenHeaderValue)
 				.as(BodyCodec.jsonObject())
 				.send(ar -> {
 					if (ar.succeeded()) {
@@ -99,6 +118,7 @@ public class ApiTest {
 			context.assertEquals(1, array.size());
 			context.assertEquals(0, array.getJsonObject(0).getInteger("id"));
 			webClient.put("/api/pages/0")
+				.putHeader("Authorization", jwtTokenHeaderValue)
 				.as(BodyCodec.jsonObject())
 				.sendJsonObject(
 					new JsonObject()
@@ -118,6 +138,7 @@ public class ApiTest {
 		putRequest.compose(response -> {
 			context.assertTrue(response.getBoolean("success"));
 			webClient.delete("/api/pages/0")
+				.putHeader("Authorization", jwtTokenHeaderValue)
 				.as(BodyCodec.jsonObject())
 				.send(ar -> {
 					if (ar.succeeded()) {

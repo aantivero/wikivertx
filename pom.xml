@@ -95,6 +95,11 @@
             <groupId>io.vertx</groupId>
             <artifactId>vertx-auth-jdbc</artifactId>
         </dependency>
+        <!-- tag:auth-jwt -->
+        <dependency>
+            <groupId>io.vertx</groupId>
+            <artifactId>vertx-auth-jwt</artifactId>
+        </dependency>
     </dependencies>
 
     <build>
