@@ -318,55 +318,71 @@ public class HttpServerVerticle extends AbstractVerticle{
     }
 
     private void pageRenderingHandler(RoutingContext context) {
-        String requestedPage = context.request().getParam("page");
+    	context.user().isAuthorized("update", updateResponse -> {
+    		boolean canSavePage = updateResponse.succeeded() && updateResponse.result();
+    		context.user().isAuthorized("delete", deleteResponse -> {
+    			boolean canDeletePage = deleteResponse.succeeded() && deleteResponse.result();
 
-        dbService.fetchPage(requestedPage, reply -> {
-            if (reply.succeeded()) {
-                JsonObject payLoad = reply.result();
+    			String requestedPage = context.request().getParam("page");
+			    dbService.fetchPage(requestedPage, reply -> {
+				    if (reply.succeeded()) {
+					    JsonObject payLoad = reply.result();
 
-                boolean found = payLoad.getBoolean("found");
-                String rawContent = payLoad.getString("rawContent", EMPTY_PAGE_MARKDOWN);
-                context.put("title", requestedPage);
-                context.put("id", payLoad.getInteger("id", -1));
-                context.put("newPage", found ? "no" : "yes");
-                context.put("rawContent", rawContent);
-                context.put("content", Processor.process(rawContent));
-                context.put("timestamp", new Date().toString());
+					    boolean found = payLoad.getBoolean("found");
+					    String rawContent = payLoad.getString("rawContent", EMPTY_PAGE_MARKDOWN);
+					    context.put("title", requestedPage);
+					    context.put("id", payLoad.getInteger("id", -1));
+					    context.put("newPage", found ? "no" : "yes");
+					    context.put("rawContent", rawContent);
+					    context.put("content", Processor.process(rawContent));
+					    context.put("timestamp", new Date().toString());
+					    context.put("username", context.user().principal().getString("username"));
+					    context.put("canSavePage", canSavePage);
+					    context.put("canDeletePage", canDeletePage);
 
-                templateEngine.render(context, "templates", "/page.ftl", ar -> {
-                    if (ar.succeeded()) {
-                        context.response().putHeader("Content-Type", "text/html");
-                        context.response().end(ar.result());
-                    } else {
-                        context.fail(ar.cause());
-                    }
-                });
-            } else {
-                context.fail(reply.cause());
-            }
-        });
+					    templateEngine.render(context, "templates", "/page.ftl", ar -> {
+						    if (ar.succeeded()) {
+							    context.response().putHeader("Content-Type", "text/html");
+							    context.response().end(ar.result());
+						    } else {
+							    context.fail(ar.cause());
+						    }
+					    });
+				    } else {
+					    context.fail(reply.cause());
+				    }
+			    });
+		    });
+	    });
     }
 
     private void pageUpdateHandler(RoutingContext context) {
-        String title = context.request().getParam("title");
-        String markdown = context.request().getParam("markdown");
-        String id = context.request().getParam("id");
+    	boolean pageCreation = "yes".equalsIgnoreCase(context.request().getParam("newPage"));
+    	context.user().isAuthorized(pageCreation ? "create" : "update", res -> {
+    		if (res.succeeded() && res.result()) {
+			    String title = context.request().getParam("title");
+			    Handler<AsyncResult<Void>> handler = reply -> {
+				    if (reply.succeeded()) {
+					    context.response().setStatusCode(303);
+					    context.response().putHeader("Location", "/wiki/" + title);
+					    context.response().end();
+				    } else {
+					    context.fail(reply.cause());
+				    }
+			    };
 
-        Handler<AsyncResult<Void>> handler = reply -> {
-            if (reply.succeeded()) {
-                context.response().setStatusCode(303);
-                context.response().putHeader("Location", "/wiki/" + title);
-                context.response().end();
-            } else {
-                context.fail(reply.cause());
-            }
-        };
+			    String markdown = context.request().getParam("markdown");
+			    if (pageCreation) {
+				    dbService.createPage(title, markdown, handler);
+			    } else {
+				    dbService.savePage(Integer.valueOf(context.request().getParam("id")), markdown, handler);
+			    }
+		    } else {
+    			context.response().setStatusCode(403).end();
+		    }
+	    });
 
-        if ("yes".equals(context.request().getParam("newPage"))) {
-            dbService.createPage(title, markdown, handler);
-        } else {
-            dbService.savePage(Integer.valueOf(id), markdown, handler);
-        }
+
     }
 
     private void pageCreateHandler(RoutingContext context) {
@@ -383,70 +399,83 @@ public class HttpServerVerticle extends AbstractVerticle{
     }
 
     private void pageDeleteHandler(RoutingContext context) {
-        dbService.deletePage(Integer.valueOf(context.request().getParam("id")), reply -> {
-           if (reply.succeeded()) {
-               context.response().setStatusCode(303);
-               context.response().putHeader("Location", "/");
-               context.response().end();
-           } else {
-               context.fail(reply.cause());
-           }
-        });
+    	context.user().isAuthorized("delete", res -> {
+    		if (res.succeeded() && res.result()) {
+			    dbService.deletePage(Integer.valueOf(context.request().getParam("id")), reply -> {
+				    if (reply.succeeded()) {
+					    context.response().setStatusCode(303);
+					    context.response().putHeader("Location", "/");
+					    context.response().end();
+				    } else {
+					    context.fail(reply.cause());
+				    }
+			    });
+		    } else {
+    			context.response().setStatusCode(403).end();
+		    }
+	    });
     }
 
     private void backupHandler(RoutingContext context) {
-        dbService.fetchAllPagesData(reply -> {
-            if (reply.succeeded()) {
+    	context.user().isAuthorized("role:writer", res -> {
+    		if (res.succeeded() && res.result()) {
+			    dbService.fetchAllPagesData(reply -> {
+				    if (reply.succeeded()) {
 
-                JsonArray filesObject = new JsonArray();
-                JsonObject payload = new JsonObject()
-                        .put("files", filesObject)
-                        .put("language", "plaintext")
-                        .put("title", "antivero-wiki-vertx-backup")
-                        .put("public", "true");
+					    JsonArray filesObject = new JsonArray();
+					    JsonObject payload = new JsonObject()
+						    .put("files", filesObject)
+						    .put("language", "plaintext")
+						    .put("title", "antivero-wiki-vertx-backup")
+						    .put("public", "true");
 
-                reply
-                        .result()
-                        .forEach(page -> {
-                            JsonObject fileObject = new JsonObject();
-                            fileObject.put("name", page.getString("NAME"));
-                            fileObject.put("content", page.getString("CONTENT"));
-                            filesObject.add(fileObject);
-                        });
+					    reply
+						    .result()
+						    .forEach(page -> {
+							    JsonObject fileObject = new JsonObject();
+							    fileObject.put("name", page.getString("NAME"));
+							    fileObject.put("content", page.getString("CONTENT"));
+							    filesObject.add(fileObject);
+						    });
 
-                webClient.post(443, "snippets.glot.io", "/snippets")
-                        .putHeader("Content-Type", "application/json")
-                        .as(BodyCodec.jsonObject())
-                        .sendJsonObject(payload, ar -> {
-                            if (ar.succeeded()) {
-                                HttpResponse<JsonObject> response = ar.result();
-                                if (response.statusCode() == 200) {
-                                    String url = "https://glot.io/snippets/" + response.body().getString("id");
-                                    context.put("backup_gist_url", url);
-                                    indexHandler(context);
-                                } else {
-                                    StringBuilder message = new StringBuilder();
-                                    message.append("Could not backup the wiki");
-                                    message.append(response.statusMessage());
+					    webClient.post(443, "snippets.glot.io", "/snippets")
+						    .putHeader("Content-Type", "application/json")
+						    .as(BodyCodec.jsonObject())
+						    .sendJsonObject(payload, ar -> {
+							    if (ar.succeeded()) {
+								    HttpResponse<JsonObject> response = ar.result();
+								    if (response.statusCode() == 200) {
+									    String url = "https://glot.io/snippets/" + response.body().getString("id");
+									    context.put("backup_gist_url", url);
+									    indexHandler(context);
+								    } else {
+									    StringBuilder message = new StringBuilder();
+									    message.append("Could not backup the wiki");
+									    message.append(response.statusMessage());
 
-                                    JsonObject body = response.body();
-                                    if (body != null) {
-                                        message.append(System.getProperty("line.separator"))
-                                                .append(body.encodePrettily());
-                                    }
-                                    LOGGER.error(message.toString());
-                                    context.fail(502);
-                                }
-                            } else {
-                                Throwable err = ar.cause();
-                                LOGGER.error("HTTP Client error", err);
-                                context.fail(err);
-                            }
-                        });
-            } else {
-                context.fail(reply.cause());
-            }
-        });
+									    JsonObject body = response.body();
+									    if (body != null) {
+										    message.append(System.getProperty("line.separator"))
+											    .append(body.encodePrettily());
+									    }
+									    LOGGER.error(message.toString());
+									    context.fail(502);
+								    }
+							    } else {
+								    Throwable err = ar.cause();
+								    LOGGER.error("HTTP Client error", err);
+								    context.fail(err);
+							    }
+						    });
+				    } else {
+					    context.fail(reply.cause());
+				    }
+			    });
+		    } else {
+    			context.response().setStatusCode(403).end();
+		    }
+	    });
+
     }
 
 }
