@@ -165,7 +165,7 @@ public class HttpServerVerticle extends AbstractVerticle{
 			    }
 		    });
 	    });
-	    
+
         apiRouter.get("/pages").handler(this::apiRoot);
         apiRouter.get("/pages/:id").handler(this::apiGetPage);
         apiRouter.post().handler(BodyHandler.create());
@@ -202,24 +202,32 @@ public class HttpServerVerticle extends AbstractVerticle{
 	}
 
 	private void apiDeletePage(RoutingContext context) {
-    	int id = Integer.valueOf(context.request().getParam("id"));
+    	if (context.user().principal().getBoolean("canDelete", false)) {
+		    int id = Integer.valueOf(context.request().getParam("id"));
 
-    	dbService.deletePage(id, reply -> {
-    		handleSimpleDbReply(context, reply);
-	    });
+		    dbService.deletePage(id, reply -> {
+			    handleSimpleDbReply(context, reply);
+		    });
+	    } else {
+    		context.fail(401);
+	    }
 	}
 
 	private void apiUpdatePage(RoutingContext context) {
-    	JsonObject page = context.getBodyAsJson();
-    	int id = Integer.valueOf(context.request().getParam("id"));
+    	if (context.user().principal().getBoolean("canUpdate", false)) {
+		    JsonObject page = context.getBodyAsJson();
+		    int id = Integer.valueOf(context.request().getParam("id"));
 
-    	if (!validateJsonPageDocument(context, page, "markdown")) {
-    		return;
+		    if (!validateJsonPageDocument(context, page, "markdown")) {
+			    return;
+		    }
+
+		    dbService.savePage(id, page.getString("markdown"), reply -> {
+			    handleSimpleDbReply(context, reply);
+		    });
+	    } else {
+    		context.fail(401);
 	    }
-
-	    dbService.savePage(id, page.getString("markdown"), reply -> {
-	    	handleSimpleDbReply(context, reply);
-	    });
 	}
 
 	private void handleSimpleDbReply(RoutingContext context, AsyncResult<Void> reply) {
@@ -244,23 +252,27 @@ public class HttpServerVerticle extends AbstractVerticle{
 	}
 
 	private void apiCreate(RoutingContext context) {
-        JsonObject page = context.getBodyAsJson();
-        if (!validateJsonPageDocument(context, page, "name", "markdown")) {
-            return;
-        }
-        dbService.createPage(page.getString("name"), page.getString("markdown"), reply -> {
-            if (reply.succeeded()) {
-                context.response().setStatusCode(201);
-                context.response().putHeader("Content-Type", "application/json");
-                context.response().end(new JsonObject().put("success", true).encode());
-            } else {
-                context.response().setStatusCode(500);
-                context.response().putHeader("Content-Type", "application/json");
-                context.response().end(new JsonObject()
-                    .put("success", false)
-                    .put("error", reply.cause().getMessage()).encode());
-            }
-        });
+    	if (context.user().principal().getBoolean("canCreate",false)) {
+		    JsonObject page = context.getBodyAsJson();
+		    if (!validateJsonPageDocument(context, page, "name", "markdown")) {
+			    return;
+		    }
+		    dbService.createPage(page.getString("name"), page.getString("markdown"), reply -> {
+			    if (reply.succeeded()) {
+				    context.response().setStatusCode(201);
+				    context.response().putHeader("Content-Type", "application/json");
+				    context.response().end(new JsonObject().put("success", true).encode());
+			    } else {
+				    context.response().setStatusCode(500);
+				    context.response().putHeader("Content-Type", "application/json");
+				    context.response().end(new JsonObject()
+					    .put("success", false)
+					    .put("error", reply.cause().getMessage()).encode());
+			    }
+		    });
+	    } else {
+    		context.fail(401);
+	    }
     }
 
     private boolean validateJsonPageDocument(RoutingContext context, JsonObject page, String... expectedKeys) {
