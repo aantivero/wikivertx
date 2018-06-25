@@ -294,25 +294,27 @@ public class HttpServerVerticle extends AbstractVerticle{
     }
 
     private void indexHandler(RoutingContext context) {
-        DeliveryOptions options = new DeliveryOptions().addHeader("action", "all-pages");
-
-        // replace the call of the event bus to the database service
-        dbService.fetchAllPages(reply -> {
-            if (reply.succeeded()) {
-                context.put("title", "My Wiki Home");
-                context.put("pages", reply.result().getList());
-                templateEngine.render(context, "templates", "/index.ftl", ar -> {
-                    if (ar.succeeded()) {
-                        context.response().putHeader("Content-Type", "text/html");
-                        context.response().end(ar.result());
-                    } else {
-                        context.fail(ar.cause());
-                    }
-                });
-            } else {
-                context.fail(reply.cause());
-            }
-        });
+	    context.user().isAuthorized("create", res -> {
+	    	boolean canCreatePage = res.succeeded() && res.result();
+		    dbService.fetchAllPages(reply -> {
+			    if (reply.succeeded()) {
+				    context.put("title", "My Wiki Home");
+				    context.put("pages", reply.result().getList());
+				    context.put("canCreatePage", canCreatePage);
+				    context.put("username", context.user().principal().getString("username"));
+				    templateEngine.render(context, "templates", "/index.ftl", ar -> {
+					    if (ar.succeeded()) {
+						    context.response().putHeader("Content-Type", "text/html");
+						    context.response().end(ar.result());
+					    } else {
+						    context.fail(ar.cause());
+					    }
+				    });
+			    } else {
+				    context.fail(reply.cause());
+			    }
+		    });
+	    });
     }
 
     private void pageRenderingHandler(RoutingContext context) {
