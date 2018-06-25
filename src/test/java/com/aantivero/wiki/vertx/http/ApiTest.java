@@ -19,6 +19,9 @@ import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 
+import static com.aantivero.wiki.vertx.DatabaseConstants.CONFIG_WIKIDB_JDBC_MAX_POOL_SIZE;
+import static com.aantivero.wiki.vertx.DatabaseConstants.CONFIG_WIKIDB_JDBC_URL;
+
 @RunWith(VertxUnitRunner.class)
 public class ApiTest {
 
@@ -30,8 +33,8 @@ public class ApiTest {
 		vertx = Vertx.vertx();
 
 		JsonObject conf = new JsonObject()
-			.put(WikiDatabaseVerticle.CONFIG_WIKIDB_JDBC_URL, "jdbc:hsqldb:mem:testdb;shutdown=true")
-			.put(WikiDatabaseVerticle.CONFIG_WIKIDB_JDBC_MAX_POOL_SIZE, 4);
+			.put(CONFIG_WIKIDB_JDBC_URL, "jdbc:hsqldb:mem:testdb;shutdown=true")
+			.put(CONFIG_WIKIDB_JDBC_MAX_POOL_SIZE, 4);
 
 		vertx.deployVerticle(new WikiDatabaseVerticle(),
 			new DeploymentOptions().setConfig(conf), context.asyncAssertSuccess());
