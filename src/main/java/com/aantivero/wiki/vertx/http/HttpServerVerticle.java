@@ -12,13 +12,16 @@ import io.vertx.core.http.HttpServerOptions;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import io.vertx.core.net.JksOptions;
+import io.vertx.ext.auth.jdbc.JDBCAuth;
+import io.vertx.ext.jdbc.JDBCClient;
 import io.vertx.ext.web.Router;
 import io.vertx.ext.web.RoutingContext;
 import io.vertx.ext.web.client.HttpResponse;
 import io.vertx.ext.web.client.WebClient;
 import io.vertx.ext.web.client.WebClientOptions;
 import io.vertx.ext.web.codec.BodyCodec;
-import io.vertx.ext.web.handler.BodyHandler;
+import io.vertx.ext.web.handler.*;
+import io.vertx.ext.web.sstore.LocalSessionStore;
 import io.vertx.ext.web.templ.FreeMarkerTemplateEngine;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -27,6 +30,8 @@ import java.util.Arrays;
 import java.util.Date;
 import java.util.List;
 import java.util.stream.Collectors;
+
+import static com.aantivero.wiki.vertx.DatabaseConstants.*;
 
 /**
  * Verticles to deal with HTTP requests
@@ -61,6 +66,7 @@ public class HttpServerVerticle extends AbstractVerticle{
                 .setUserAgent("antivero-wiki-vertx"));
 
 
+        //ssl support
         HttpServer server = vertx.createHttpServer(new HttpServerOptions()
 	        .setSsl(true)
 	        .setKeyStoreOptions(new JksOptions()
@@ -69,14 +75,49 @@ public class HttpServerVerticle extends AbstractVerticle{
 	        )
         );
 
+        //jdbc-auth
+	    JDBCClient dbClient = JDBCClient.createShared(vertx, new JsonObject()
+		    .put("url", config().getString(CONFIG_WIKIDB_JDBC_URL, DEFAULT_WIKI_JDBC_URL))
+		    .put("driver_class", config().getString(CONFIG_WIKIDB_JDBC_DRIVER_CLASS, DEFAULT_WIKI_JDBC_URL))
+		    .put("max_pool_size", config().getInteger(CONFIG_WIKIDB_JDBC_MAX_POOL_SIZE, DEFAULT_JDBC_MAX_POOL_SIZE))
+	    );
+
+	    JDBCAuth auth = JDBCAuth.create(vertx, dbClient);
+
         Router router = Router.router(vertx);
+
+        // Auth Routes
+        router.route().handler(CookieHandler.create());
+        router.route().handler(BodyHandler.create());
+        router.route().handler(SessionHandler.create(LocalSessionStore.create(vertx)));
+        router.route().handler(UserSessionHandler.create(auth));
+
+	    AuthHandler authHandler = RedirectAuthHandler.create(auth, "/login");
+	    router.route("/").handler(authHandler);
+	    router.route("/wiki/*").handler(authHandler);
+	    router.route("/action/*").handler(authHandler);
+
         router.get("/").handler(this::indexHandler);
-        router.get("/backup").handler(this::backupHandler);
-        router.get("/wiki/:page").handler(this::pageRenderingHandler);
-        router.post().handler(BodyHandler.create());
-        router.post("/save").handler(this::pageUpdateHandler);
-        router.post("/create").handler(this::pageCreateHandler);
-        router.post("/delete").handler(this::pageDeleteHandler);
+	    router.get("/wiki/:page").handler(this::pageRenderingHandler);
+	    router.post("/action/save").handler(this::pageUpdateHandler);
+	    router.post("/action/create").handler(this::pageCreateHandler);
+	    router.get("/action/backup").handler(this::backupHandler);
+	    router.post("/action/delete").handler(this::pageDeleteHandler);
+        // router.post().handler(BodyHandler.create());
+	    // end auth routes
+
+	    // auth login
+	    router.get("/login").handler(this::loginHandler);
+	    router.post("/login-auth").handler(FormLoginHandler.create(auth));
+
+	    router.get("/logout").handler(context -> {
+	    	context.clearUser();
+	    	context.response()
+			    .setStatusCode(302)
+			    .putHeader("Location", "/")
+			    .end();
+	    });
+	    //end auth login
 
         Router apiRouter = Router.router(vertx);
         apiRouter.get("/pages").handler(this::apiRoot);
@@ -101,6 +142,18 @@ public class HttpServerVerticle extends AbstractVerticle{
                     }
                 });
     }
+
+	private void loginHandler(RoutingContext context) {
+    	context.put("title", "Login");
+    	templateEngine.render(context, "templates", "/login.ftl", ar -> {
+    		if (ar.succeeded()) {
+    			context.response().putHeader("Content-Type", "text/html");
+    			context.response().end(ar.result());
+		    } else {
+    			context.fail(ar.cause());
+		    }
+	    });
+	}
 
 	private void apiDeletePage(RoutingContext context) {
     	int id = Integer.valueOf(context.request().getParam("id"));
