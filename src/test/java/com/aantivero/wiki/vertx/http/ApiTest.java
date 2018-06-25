@@ -32,12 +32,15 @@ public class ApiTest {
 	public void prepare(TestContext context) {
 		vertx = Vertx.vertx();
 
-		JsonObject conf = new JsonObject()
+		JsonObject dbConf = new JsonObject()
 			.put(CONFIG_WIKIDB_JDBC_URL, "jdbc:hsqldb:mem:testdb;shutdown=true")
 			.put(CONFIG_WIKIDB_JDBC_MAX_POOL_SIZE, 4);
 
+		vertx.deployVerticle(new AuthInitializerVerticle(),
+			new DeploymentOptions().setConfig(dbConf), context.asyncAssertSuccess());
+
 		vertx.deployVerticle(new WikiDatabaseVerticle(),
-			new DeploymentOptions().setConfig(conf), context.asyncAssertSuccess());
+			new DeploymentOptions().setConfig(dbConf), context.asyncAssertSuccess());
 
 		vertx.deployVerticle(new HttpServerVerticle(), context.asyncAssertSuccess());
 
