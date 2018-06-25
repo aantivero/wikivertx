@@ -8,8 +8,10 @@ import io.vertx.core.Future;
 import io.vertx.core.Handler;
 import io.vertx.core.eventbus.DeliveryOptions;
 import io.vertx.core.http.HttpServer;
+import io.vertx.core.http.HttpServerOptions;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
+import io.vertx.core.net.JksOptions;
 import io.vertx.ext.web.Router;
 import io.vertx.ext.web.RoutingContext;
 import io.vertx.ext.web.client.HttpResponse;
@@ -59,7 +61,13 @@ public class HttpServerVerticle extends AbstractVerticle{
                 .setUserAgent("antivero-wiki-vertx"));
 
 
-        HttpServer server = vertx.createHttpServer();
+        HttpServer server = vertx.createHttpServer(new HttpServerOptions()
+	        .setSsl(true)
+	        .setKeyStoreOptions(new JksOptions()
+		        .setPath("server-keystore.jks")
+		        .setPassword("secret")
+	        )
+        );
 
         Router router = Router.router(vertx);
         router.get("/").handler(this::indexHandler);
