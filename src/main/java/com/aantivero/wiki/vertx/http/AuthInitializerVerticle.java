@@ -1,12 +1,9 @@
 package com.aantivero.wiki.vertx.http;
 
-import io.vertx.core.AbstractVerticle;
-import io.vertx.core.AsyncResult;
-import io.vertx.core.Handler;
+import io.reactivex.Completable;
+import io.vertx.reactivex.core.AbstractVerticle;
+import io.vertx.reactivex.ext.jdbc.JDBCClient;
 import io.vertx.core.json.JsonObject;
-import io.vertx.ext.jdbc.JDBCClient;
-import io.vertx.ext.sql.ResultSet;
-import io.vertx.ext.sql.SQLConnection;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -51,50 +48,20 @@ public class AuthInitializerVerticle extends AbstractVerticle {
 			.put("max_pool_size", config().getInteger(CONFIG_WIKIDB_JDBC_MAX_POOL_SIZE, DEFAULT_JDBC_MAX_POOL_SIZE))
 		);
 
-		dbClient.getConnection(car -> {
-			if (car.succeeded()) {
-				SQLConnection connection = car.result();
-				connection.batch(schemaCreation, ar -> schemaCreationHandler(dataInit, connection, ar));
-			} else {
-				LOGGER.error("Cannot obtain a database connection ", car.cause());
-			}
-		});
-	}
-
-	private void schemaCreationHandler(List<String> dataInit, SQLConnection connection, AsyncResult<List<Integer>> ar) {
-		if (ar.succeeded()) {
-			connection.query("select count(*) from user;", testQueryHandler(dataInit, connection));
-		} else {
-			connection.close();
-			LOGGER.error("Schema creation failed", ar.cause());
-		}
-	}
-
-	private Handler<AsyncResult<ResultSet>> testQueryHandler(List<String> dataInit, SQLConnection connection) {
-		return ar -> {
-			if (ar.succeeded()) {
-				if (ar.result().getResults().get(0).getInteger(0) == 0) {
+		dbClient.rxGetConnection().flatMapCompletable(connection -> connection
+			.rxBatch(schemaCreation)
+			.flatMap(rs -> connection.rxQuery("select count(*) from user;"))
+			.flatMapCompletable(rs -> {
+				if (rs.getResults().get(0).getInteger(0) == 0) {
 					LOGGER.info("Need to insert data");
-					connection.batch(dataInit, batchInsertHandler(connection));
+					return connection.rxBatch(dataInit).toCompletable();
 				} else {
 					LOGGER.info("No need to insert data");
-					connection.close();
+					return Completable.complete();
 				}
-			} else {
-				connection.close();
-				LOGGER.info("Could not check the numbers of the users in the database", ar.cause());
-			}
-		};
-	}
-
-	private Handler<AsyncResult<List<Integer>>> batchInsertHandler(SQLConnection connection) {
-		return ar -> {
-			if (ar.succeeded()) {
-				LOGGER.info("Successfully inserted data");
-			} else {
-				LOGGER.error("Could not insert data", ar.cause());
-			}
-			connection.close();
-		};
+			}).doFinally(connection::close)
+		).subscribe(
+				() -> LOGGER.info("Authentication database prepared"),
+				t -> LOGGER.error("Could not prepare the authentication database", t));
 	}
 }
