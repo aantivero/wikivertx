@@ -2,31 +2,36 @@ package com.aantivero.wiki.vertx.http;
 
 import com.aantivero.wiki.vertx.database.WikiDatabaseService;
 import com.github.rjeschke.txtmark.Processor;
-import io.vertx.core.AbstractVerticle;
+
+import io.reactivex.Single;
 import io.vertx.core.AsyncResult;
 import io.vertx.core.Future;
 import io.vertx.core.Handler;
-import io.vertx.core.http.HttpServer;
 import io.vertx.core.http.HttpServerOptions;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import io.vertx.core.net.JksOptions;
 import io.vertx.ext.auth.KeyStoreOptions;
-import io.vertx.ext.auth.User;
-import io.vertx.ext.auth.jdbc.JDBCAuth;
-import io.vertx.ext.auth.jwt.JWTAuth;
 import io.vertx.ext.auth.jwt.JWTAuthOptions;
-import io.vertx.ext.jdbc.JDBCClient;
 import io.vertx.ext.jwt.JWTOptions;
-import io.vertx.ext.web.Router;
-import io.vertx.ext.web.RoutingContext;
 import io.vertx.ext.web.client.HttpResponse;
-import io.vertx.ext.web.client.WebClient;
 import io.vertx.ext.web.client.WebClientOptions;
-import io.vertx.ext.web.codec.BodyCodec;
-import io.vertx.ext.web.handler.*;
-import io.vertx.ext.web.sstore.LocalSessionStore;
-import io.vertx.ext.web.templ.FreeMarkerTemplateEngine;
+
+// rx-java-imports
+import io.vertx.reactivex.core.AbstractVerticle;
+import io.vertx.reactivex.core.http.HttpServer;
+import io.vertx.reactivex.ext.auth.User;
+import io.vertx.reactivex.ext.auth.jdbc.JDBCAuth;
+import io.vertx.reactivex.ext.auth.jwt.JWTAuth;
+import io.vertx.reactivex.ext.jdbc.JDBCClient;
+import io.vertx.reactivex.ext.web.Router;
+import io.vertx.reactivex.ext.web.RoutingContext;
+import io.vertx.reactivex.ext.web.client.WebClient;
+import io.vertx.reactivex.ext.web.codec.BodyCodec;
+import io.vertx.reactivex.ext.web.handler.*;
+import io.vertx.reactivex.ext.web.sstore.LocalSessionStore;
+import io.vertx.reactivex.ext.web.templ.FreeMarkerTemplateEngine;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -62,7 +67,8 @@ public class HttpServerVerticle extends AbstractVerticle{
     public void start(Future<Void> startFuture) throws Exception {
         String wikiDbQueue = config().getString(CONFIG_WIKIDB_QUEUE, "wikidb.queue");
 
-        dbService = WikiDatabaseService.createProxy(vertx, wikiDbQueue);
+        //dbService = WikiDatabaseService.createProxy(vertx, wikiDbQueue);
+		dbService = com.aantivero.wiki.vertx.database.WikiDatabaseService.createProxy(vertx.getDelegate(), wikiDbQueue);
 
         // init the web client
         webClient = WebClient.create(vertx, new WebClientOptions()
@@ -140,30 +146,26 @@ public class HttpServerVerticle extends AbstractVerticle{
 			    .put("username", context.request().getHeader("login"))
 			    .put("password", context.request().getHeader("password"));
 
-	    	auth.authenticate(creds, authResult -> {
-	    		if (authResult.succeeded()) {
-				    User user = authResult.result();
-				    user.isAuthorized("create", canCreate -> {
-				    	user.isAuthorized("delete", canDelete -> {
-				    		user.isAuthorized("update", canUpdate -> {
+	    	auth.rxAuthenticate(creds).flatMap(user -> {
+				Single<Boolean> create = user.rxIsAuthorized("create");
+				Single<Boolean> delete = user.rxIsAuthorized("delete");
+				Single<Boolean> update = user.rxIsAuthorized("update");
 
-				    			String token = jwtAuth.generateToken(new JsonObject()
-								    .put("username", context.request().getHeader("login"))
-								    .put("canCreate", canCreate.succeeded() && canCreate.result())
-								    .put("canDelete", canDelete.succeeded() && canDelete.result())
-								    .put("canUpdate", canUpdate.succeeded() && canUpdate.result()),
-								    new JWTOptions()
-									    .setSubject("Antivero Wiki API")
-								        .setIssuer("Vert.x"));
-
-				    			context.response().putHeader("Content-Type", "text/plain").end(token);
-						    });
-					    });
-				    });
-			    } else {
-	    			context.fail(401);
-			    }
-		    });
+				return Single.zip(create, delete, update, (canCreate, canDelete, canUpdate) -> {
+					return jwtAuth.generateToken(
+							new JsonObject()
+								.put("username", context.request().getHeader("login"))
+								.put("canCreate", canCreate)
+								.put("canDelete", canDelete)
+								.put("canUpdate", canUpdate),
+							new JWTOptions()
+								.setSubject("Antivero Wiki API")
+								.setIssuer("Vert.x")
+					);
+				});
+			}).subscribe(token -> {
+				context.response().putHeader("Content-Type", "text/plain").end(token);
+			}, t -> context.fail(401));
 	    });
 
         apiRouter.get("/pages").handler(this::apiRoot);
@@ -177,16 +179,14 @@ public class HttpServerVerticle extends AbstractVerticle{
 
         int portNumber = config().getInteger(CONFIG_HTTP_SERVER_PORT, 8080);
         server
-                .requestHandler(router::accept)
-                .listen(portNumber, ar -> {
-                    if (ar.succeeded()) {
-                        LOGGER.info("HTTP Server running on port " + portNumber);
-                        startFuture.complete();
-                    } else {
-                        LOGGER.error("Could not start HTTP Server", ar.cause());
-                        startFuture.fail(ar.cause());
-                    }
-                });
+			.requestHandler(router::accept)
+			.rxListen(portNumber)
+			.subscribe(s -> {
+				LOGGER.info("HTTP server running on port " + portNumber);
+				startFuture.complete();
+			}, t -> {
+				LOGGER.error("Could not start HTTP server", t);
+			});
     }
 
 	private void loginHandler(RoutingContext context) {
