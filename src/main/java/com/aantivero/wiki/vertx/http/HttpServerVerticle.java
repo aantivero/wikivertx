@@ -3,6 +3,7 @@ package com.aantivero.wiki.vertx.http;
 import com.aantivero.wiki.vertx.database.WikiDatabaseService;
 import com.github.rjeschke.txtmark.Processor;
 
+import io.reactivex.Completable;
 import io.reactivex.Single;
 import io.vertx.core.AsyncResult;
 import io.vertx.core.Future;
@@ -189,6 +190,11 @@ public class HttpServerVerticle extends AbstractVerticle{
 			});
     }
 
+    private Completable checkAuthorised(RoutingContext context, String authority) {
+    	return context.user().rxIsAuthorised(authority)
+				.flatMapCompletable(authorized -> authorized ? Completable.complete() : Completable.error(new UnauthorizedThrowable(authority)));
+	}
+
 	private void loginHandler(RoutingContext context) {
     	context.put("title", "Login");
     	templateEngine.render(context, "templates", "/login.ftl", ar -> {
@@ -204,10 +210,7 @@ public class HttpServerVerticle extends AbstractVerticle{
 	private void apiDeletePage(RoutingContext context) {
     	if (context.user().principal().getBoolean("canDelete", false)) {
 		    int id = Integer.valueOf(context.request().getParam("id"));
-
-		    dbService.deletePage(id, reply -> {
-			    handleSimpleDbReply(context, reply);
-		    });
+		    dbService.rxDeletePage(id).subscribe(() -> apiResponse(context, 200, null, null), t -> apiFailure(context, t));
 	    } else {
     		context.fail(401);
 	    }
@@ -222,9 +225,8 @@ public class HttpServerVerticle extends AbstractVerticle{
 			    return;
 		    }
 
-		    dbService.savePage(id, page.getString("markdown"), reply -> {
-			    handleSimpleDbReply(context, reply);
-		    });
+		    dbService.rxSavePage(id, page.getString("markdown"))
+					.subscribe(() -> apiResponse(context, 200, null, null), t -> apiFailue(context, t));
 	    } else {
     		context.fail(401);
 	    }
@@ -257,19 +259,8 @@ public class HttpServerVerticle extends AbstractVerticle{
 		    if (!validateJsonPageDocument(context, page, "name", "markdown")) {
 			    return;
 		    }
-		    dbService.createPage(page.getString("name"), page.getString("markdown"), reply -> {
-			    if (reply.succeeded()) {
-				    context.response().setStatusCode(201);
-				    context.response().putHeader("Content-Type", "application/json");
-				    context.response().end(new JsonObject().put("success", true).encode());
-			    } else {
-				    context.response().setStatusCode(500);
-				    context.response().putHeader("Content-Type", "application/json");
-				    context.response().end(new JsonObject()
-					    .put("success", false)
-					    .put("error", reply.cause().getMessage()).encode());
-			    }
-		    });
+		    dbService.rxCreatePage(page.getString("name"), page.getString("markdown"))
+					.subscribe(() -> apiResponse(context, 201, null, null), t -> apiFailure(context, t));
 	    } else {
     		context.fail(401);
 	    }
@@ -292,38 +283,22 @@ public class HttpServerVerticle extends AbstractVerticle{
 
     private void apiGetPage(RoutingContext context) {
     	int id = Integer.valueOf(context.request().getParam("id"));
-    	dbService.fetchPageById(id, reply -> {
-    		JsonObject response = new JsonObject();
-    		if (reply.succeeded()) {
-    			JsonObject dbObject = reply.result();
-    			if (dbObject.getBoolean("found")) {
-    				JsonObject payload = new JsonObject()
-						.put("name", dbObject.getString("name"))
-						.put("id", dbObject.getInteger("id"))
-						.put("markdown", dbObject.getString("content"))
-						.put("html", Processor.process(dbObject.getString("content")));
-    				response
-                        .put("success", true)
-                        .put("payload", payload);
-    				context.response().setStatusCode(200);
-			    } else {
-    			    response
-                        .put("success", false)
-                        .put("error", "There is not page with ID" + id);
-    			    context.response().setStatusCode(404);
-                }
-		    } else {
-    		    response
-                    .put("success", false)
-                    .put("error", reply.cause().getMessage());
-    		    context.response().setStatusCode(500);
-            }
-
-            context.response().putHeader("Content-Type", "application/json");
-    		context.response().end(response.encode());
-	    });
+    	dbService.rxFetchPageById(id)
+				.subscribe(dbObject -> {
+					if (dbObject.getBoolean("found")) {
+						JsonObject payload = new JsonObject()
+								.put("name", dbObject.getString("name"))
+								.put("id", dbObject.getInteger("id"))
+								.put("markdown", dbObject.getString("content"))
+								.put("html", Processor.process(dbObject.getString("content")));
+						apiResponse(context, 200, "page", payload);
+					} else {
+						apiFailure(context, 404, "There is no page with ID " + id);
+					}
+				}, t -> apiFailure(context, t));
 	}
 
+	//TODO continue refactoring
 	private void apiRoot(RoutingContext context) {
         dbService.fetchAllPagesData(reply -> {
             JsonObject response = new JsonObject();
@@ -536,4 +511,9 @@ public class HttpServerVerticle extends AbstractVerticle{
 
     }
 
+    private static final class UnauthorizedThrowable extends Throwable {
+    	UnauthorizedThrowable(String message) {
+    		super(message, null, false, false);
+		}
+	}
 }
